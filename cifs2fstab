@@ -1,0 +1,103 @@
+#!/bin/bash
+############################################################
+#
+# CIFS2FSTAB
+#
+# A script to populate fstab with wanted cifs shares and
+# make them accessible for the current user.
+#
+# WARNING! This script handles Linux system files, and can
+#          cause irreparable damage to your operating 
+#          system and hardware. Use caution and have backups.
+#
+# Author: Kim Ekblad
+# Uploaded to Github Oct 22 2026
+# License - CC BY-SA 4.0
+# http://creativecommons.org/licenses/by/4.0
+#
+# Credits:
+# tripleee https://stackoverflow.com/a/57657942
+# Dan https://askubuntu.com/a/970898,
+# aneeshep and Lekensteyn https://askubuntu.com/a/30157/8698
+############################################################
+
+############################################################
+# TO-DO:
+#    Store mount-vars in a list and iterate through the
+#    list. IP-vars too... This would make for cleaner code.
+#    An alternative version that asks user for mount and IP.
+############################################################
+
+############################################################
+# You need to have the cifs credential as .cred files in  
+# the folder you run the script from.
+#
+# EXAMPLE.cred file:
+# username=myusername
+# password=mypassword
+# domain=mydomainname
+#
+# I am using the _netdev option to check the network
+# connection before mounting the cifs shares and
+# systemd.automount for ondemand mounting of the shares.
+# Your preferences may differ and you can remove these
+# options if you so wish (line 89).
+############################################################
+
+############################################################
+# MAKE YOUR CHANGES HERE.
+# Enter your shares into MOUNTS in format MOUNT:IP.
+# MOUNT is you cifs shares name and IP it's address.
+# Separate multiple shares with space.
+# EXAMPLE: MOUNTS="samba:192.168.1.2 tank:192.168.1.3"
+MOUNTS="dummy:10.10.10.10"
+############################################################
+
+
+
+
+############################################################
+# Check that user has sudo rights or is root:
+if ! [ $(id -u) = 0 ]; then
+   echo "The script need to be run as root." >&2
+   exit 1
+fi
+
+# Separate user and sudoer to get correct uid and gid later.
+if [ $SUDO_USER ]; then
+    real_user=$SUDO_USER
+else
+    real_user=$(whoami)
+fi
+
+# To run commands as non-root: sudo -u $real_user
+
+# Make a backup of fstab just in case...
+cp /etc/fstab ./fstab.orig
+
+# Get uid and gid of real_user
+uid=$(sudo -u $real_user id -u)
+gid=$(sudo -u $real_user id -g)
+
+
+# Iterate through shares and make changes to system.
+# If not exist, add wanted mount to fstab, 
+# create a dir to mount the share in and 
+# copy the credentials file to correct folder. 
+
+for MNT in $MOUNTS 
+do 
+IFS=: read -r MOUNT IP <<< "$MNT"
+grep -q "$MOUNT-init" /etc/fstab ||
+printf "\n#$MOUNT-init\n//$IP/$MOUNT /mnt/$MOUNT cifs credentials=/etc/samba/$MOUNT.cred,_netdev,uid=$uid,gid=$gid,x-systemd.automount 0 0" >> /etc/fstab
+mkdir /mnt/$MOUNT /etc/samba -p
+cp $MOUNT.cred /etc/samba
+done
+
+
+# Aand finished.
+if [ -z $MOUNTS ]; then
+    echo 'Variable $MOUNTS is empty. No changes were made.'
+else
+    echo 'Run 'sudo mount -a' or reboot to apply changes.'
+fi
